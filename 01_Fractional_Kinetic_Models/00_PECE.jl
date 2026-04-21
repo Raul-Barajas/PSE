@@ -1,80 +1,150 @@
 using SpecialFunctions
 
-"""
-INPUT VARIABLES:
-* `sys!`: The real function of two real variables that defines the right-hand side of the differential equation.
-* `α`: The order of the differential equation (a positive real number).
-* `y0`: An array of real numbers containing the initial values y(0), y'(0), ..., y^(α-1)(0).
-* `p`: The value of the parameters of the function.
-* `T`: The upper limit of the interval where the solution will be approximated (a positive real number).
-* `N`: The number of time steps the algorithm must take (a positive integer).
+# Vector de estado
+function F!(dx, sys!, x, t, p)
+    sys!(dx, x, t, p)
+    return dx
+end
 
-OUTPUT VARIABLES:
-* `y`: An array of N + 1 real numbers containing the approximate solutions y(T/N * j), j = 0, 1, ..., N.
+# Integrador hacia adelante
+function Solve!(sys!, α, x0, p, T, N)
 
-INTERNAL VARIABLES:
-* `h`: The step size of the algorithm (a positive real number).
-* `m`: The number of specified initial conditions (a positive integer).
-* `j`, `k`: Integer variables used as indices.
-* `a`, `b`: Arrays of N + 1 real numbers containing the weights of the corrector and predictor formulas, respectively.
-* `P`: The predicted value (a real variable).
-"""
+    # Parametros
+    h = T / N                                                       # h: Tamaño del paso principal
+    ξ = h / 10                                                      # ξ: Tiempo pequeño usado para regularizar el bloque inicial
+    ξf = ξ / 10                                                     # ξf: Tiempo usado solo en la primera evaluación regularizada de f
+    des = 1e-4                                                      # des: Perturbación para evitar singularidades en x(0)
+    n = length(α)                                                   # n: Número de ecuaciones del sistema
+    Tval = promote_type(typeof(float(h)), eltype(α), eltype(x0))    # Tval: Tipo numérico común para toda la integración
+    x = zeros(Tval, n, N + 1)                                       # x: Matriz de solución, una columna por instante
+    fun = zeros(Tval, n, N + 1)                                     # fun: Historial de la función evaluada en cada paso
 
-function solve!(sys!, α, y0, p, T, N)
+    αv = Vector{Tval}(undef, n)
+    x0v = Vector{Tval}(undef, n)
+    ξγ1 = Vector{Tval}(undef, n)
+    hγ1 = Vector{Tval}(undef, n)
+    hγ2 = Vector{Tval}(undef, n)
+    powα = Matrix{Tval}(undef, n, N + 2)
+    powα1 = Matrix{Tval}(undef, n, N + 2)
+
+    hT = Tval(h)
+    ξT = Tval(ξ)
+    ξfT = Tval(ξf)
+    desT = Tval(des)
+    zeroT = zero(Tval)
+    oneT = one(Tval)
+    twoT = oneT + oneT
+
+    @inbounds for k in 1:n
+        αk = Tval(α[k])
+        x0k = Tval(x0[k])
+        αv[k] = αk
+        x0v[k] = x0k
+        x[k, 1] = x0k
+
+        ξpow = ξT^αk
+        hpow = hT^αk
+        ξγ1[k] = ξpow / gamma(αk + oneT)
+        hγ1[k] = hpow / gamma(αk + oneT)
+        hγ2[k] = hpow / gamma(αk + twoT)
+
+        for m in 0:N+1
+            mT = Tval(m)
+            powα[k, m+1] = mT^αk
+            powα1[k, m+1] = mT^(αk + oneT)
+        end
+    end
+
+    P = zeros(Tval, n)
+    Fp = zeros(Tval, n)
+    Fy = zeros(Tval, n)
+    x1_des = zeros(Tval, n)
+    f_x1 = zeros(Tval, n)
+    f_eval = zeros(Tval, n)
+
     # Estructura de la función
-    function f(t, u, p)
-        du = zeros(length(α[:]))
-        sys!(du, u, p, t)
-        return du
-    end
-    # h: Tamaño del paso
-    h = T / N
-    # m: Número de condiciones iniciales especificadas
-    m = Int.(ones(size(y0, 2)) .* size(y0, 1))
-    # ξ: Desface de tiempo
-    ξ = h/25
-    # Inicialización de los arrays `a` y `b` para los pesos
-    a = zeros(length(α[:]), N + 1)
-    b = zeros(length(α[:]), N + 1)
-    # Inicialización del array de soluciones `y`
-    y = zeros(length(α[:]), N + 1)
-    # Establecer el valor inicial
-    y[:, 1] = y0[1, :]
+    f!(dx, state, t, p) = F!(dx, sys!, state, t, p)
 
-    # Calcular los pesos de las fórmulas correctoras y predictoras
-    @fastmath @inbounds @simd for k in 1:N
-        b[:, k+1] = k .^ α[:] - (k - 1) .^ α[:]
-        a[:, k+1] = (k + 1) .^ (α[:] .+ 1) - 2 * k .^ (α[:] .+ 1) + (k - 1) .^ (α[:] .+ 1)
+    # Predictor inicial regularizado
+    @inbounds @simd for k in 1:n
+        x1_des[k] = x[k, 1] + desT
     end
+
+    f!(f_x1, x1_des, ξfT, p)
+    x2 = @view x[:, 2]
+    @inbounds @simd for k in 1:n
+        x2[k] = x0v[k] + ξγ1[k] * f_x1[k]
+    end
+
+    # Modificar segun el numero de iteraciones para la condicion inicial
+    for _ in 1:10
+        f!(f_eval, x2, ξT, p)
+        @inbounds @simd for k in 1:n
+            x2[k] = x0v[k] + ξγ1[k] * f_eval[k]
+        end
+    end
+
+    f!(f_eval, x2, ξT, p)
+    @inbounds @simd for k in 1:n
+        fun[k, 1] = f_eval[k]
+    end
+
     # Integración numérica
-    @fastmath @inbounds @simd for j in 1:N
-        P = zeros(length(α[:]))
-        Y0 = zeros(length(α[:]))
-        Fp = zeros(length(α[:]))
-        Fy = zeros(length(α[:]))
+    @inbounds for i in 0:N-1
 
-        @fastmath @inbounds @simd for i in 1:length(α[:])
-            @fastmath @inbounds @simd for k in 0:m[i]-1
-                Y0[i] += ((j * h)^k / factorial(k)) .* y0[k+1, i]
+        fill!(Fp, zeroT)
+        fill!(Fy, zeroT)
+        iT = Tval(i)
+
+        for j in 0:i
+            d = i - j
+            funj = @view fun[:, j+1]
+
+            if j == 0
+                @simd for k in 1:n
+                    b = powα[k, d+2] - powα[k, d+1]
+                    a = powα1[k, i+1] - (iT - αv[k]) * powα[k, i+2]
+                    val = funj[k]
+                    Fp[k] += b * val
+                    Fy[k] += a * val
+                end
+            else
+                @simd for k in 1:n
+                    b = powα[k, d+2] - powα[k, d+1]
+                    a = powα1[k, d+3] + powα1[k, d+1] - twoT * powα1[k, d+2]
+                    val = funj[k]
+                    Fp[k] += b * val
+                    Fy[k] += a * val
+                end
             end
         end
 
-        @fastmath @inbounds @simd for k in 0:(j-1)
-            Fp[:] += b[:, j-k+1] .* f((k * h) + ξ, y[:, k+1], p)
-        end
-
-        @fastmath @inbounds @simd for k in 1:(j-1)
-            Fy[:] += a[:, j-k+1] .* f(k * h, y[:, k+1], p)
-        end
-
         # Predictor
-        P[:] = Y0[:] .+ h .^ α[:] ./ gamma.(α[:] .+ 1) .* Fp[:]
+        @inbounds @simd for k in 1:n
+            P[k] = x0v[k] + hγ1[k] * Fp[k]
+        end
+
         # Corrector
-        y[:, j+1] = Y0[:] .+ h .^ α[:] ./ gamma.(α[:] .+ 2) .* (f(j * h, P[:], p) .+ ((j - 1) .^ (α[:] .+ 1) .- (j .- 1 .- α[:]) .* (j .^ α[:])) .* f(ξ, y[:, 1], p) .+ Fy[:])
+        tnext = (i + 1) * hT
+        f!(f_eval, P, tnext, p)
+        xnext = @view x[:, i+2]
+        @inbounds @simd for k in 1:n
+            xnext[k] = x0v[k] + hγ2[k] * (f_eval[k] + Fy[k])
+        end
+
+        f!(f_eval, xnext, tnext, p)
+        @inbounds @simd for k in 1:n
+            fun[k, i+2] = f_eval[k]
+        end
+
     end
-    # Reemplazar NaN por 0
-    y[isnan.(y)] .= 0
-    # Reemplazar Inf por 0
-    y[isinf.(y)] .= 0
-    return y
+
+    # Reemplazar NaN e Inf por 0 sin crear máscaras temporales
+    @inbounds for idx in eachindex(x)
+        if isnan(x[idx]) || isinf(x[idx])
+            x[idx] = zeroT
+        end
+    end
+
+    return x
 end
