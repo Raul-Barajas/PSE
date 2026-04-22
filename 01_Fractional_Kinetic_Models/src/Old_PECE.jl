@@ -20,7 +20,7 @@ INTERNAL VARIABLES:
 * `P`: El valor predicho (una variable real).
 """
 
-function solve!(sys!, α, y0, p, T, N)
+function old_solve!(sys!, α, y0, p, T, N)
     # Estructura de la función
     function f(t, u, p)
         du = zeros(length(α[:]))

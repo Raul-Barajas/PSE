@@ -36,28 +36,28 @@ end
 
 t = (0:N) .* T ./ N
 
-time_sol2 = @elapsed sol2 = Solve!(sys2!, α_2, u2_0, p, T, N)
-println("Tiempo nuevo integrador Solve! sys2!: ", time_sol2, " s")
+time_sol2 = @elapsed sol2 = solve!(sys2!, α_2, u2_0, p, T, N)
+println("Tiempo nuevo integrador solve! sys2!: ", time_sol2, " s")
 
-time_sol3 = @elapsed sol3 = Solve!(sys3!, α_2, u2_0, p, T, N)
-println("Tiempo nuevo integrador Solve! sys3!: ", time_sol3, " s")
+time_sol3 = @elapsed sol3 = solve!(sys3!, α_2, u2_0, p, T, N)
+println("Tiempo nuevo integrador solve! sys3!: ", time_sol3, " s")
 
-time_sol1 = @elapsed sol1 = Solve!(sys!, α_1, u1_0, p, T, N)
-println("Tiempo nuevo integrador Solve! sys!: ", time_sol1, " s")
+time_sol1 = @elapsed sol1 = solve!(sys!, α_1, u1_0, p, T, N)
+println("Tiempo nuevo integrador solve! sys!: ", time_sol1, " s")
 println()
 
 u1_0 = [100 0]
 u2_0 = [u1_0[1] u1_0[2] 0 0]
 
 
-time_sol22 = @elapsed sol22 = solve!(sys2!, α_2, u2_0, p, T, N)
-println("Tiempo viejo integrador solve! sys2!: ", time_sol22, " s")
+time_sol22 = @elapsed sol22 = old_solve!(sys2!, α_2, u2_0, p, T, N)
+println("Tiempo viejo integrador old_solve! sys2!: ", time_sol22, " s")
 
-time_sol33 = @elapsed sol33 = solve!(sys3!, α_2, u2_0, p, T, N)
-println("Tiempo viejo integrador solve! sys3!: ", time_sol33, " s")
+time_sol33 = @elapsed sol33 = old_solve!(sys3!, α_2, u2_0, p, T, N)
+println("Tiempo viejo integrador old_solve! sys3!: ", time_sol33, " s")
 
-time_sol11 = @elapsed sol11 = solve!(sys!, α_1, u1_0, p, T, N)
-println("Tiempo viejo integrador solve! sys!: ", time_sol11, " s")
+time_sol11 = @elapsed sol11 = old_solve!(sys!, α_1, u1_0, p, T, N)
+println("Tiempo viejo integrador old_solve! sys!: ", time_sol11, " s")
 println()
 
 improve_sys2 = 100 * (time_sol22 - time_sol2) / time_sol22
@@ -69,7 +69,7 @@ println("Mejora nuevo vs viejo en sys3!: ", improve_sys3, " %")
 println("Mejora nuevo vs viejo en sys!: ", improve_sys1, " %")
 
 
-plot(t, [sol1[1, :], sol1[2, :]],label="Original",lw=1)
+fig_test = plot(t, [sol1[1, :], sol1[2, :]],label="Original",lw=1)
 plot!(t, [sol11[1, :], sol11[2, :]],label="Original_Antiguo_Integrador",lw=1)
 
 
@@ -79,3 +79,5 @@ plot!(t, [sol22[1, :], sol22[2, :]],label="Nuevo_Antiguo_Integrador",lw=2,ls=:da
 
 plot!(t, [sol3[1, :], sol3[2, :]],label="Raul",lw=2,ls=:dot)
 plot!(t, [sol33[1, :], sol33[2, :]],label="Raul_Antiguo_Integrador",lw=2,ls=:dot)
+
+savefig(fig_test, "fig/test1.png")

@@ -7,7 +7,7 @@ function F!(dx, sys!, x, t, p)
 end
 
 # Integrador hacia adelante
-function Solve!(sys!, α, x0, p, T, N)
+function solve!(sys!, α, x0, p, T, N)
 
     # Parametros
     h = T / N                                                       # h: Tamaño del paso principal
