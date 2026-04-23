@@ -1,5 +1,3 @@
-using SpecialFunctions
-
 # Vector de estado
 function F!(dx, sys!, x, t, p)
     sys!(dx, x, t, p)

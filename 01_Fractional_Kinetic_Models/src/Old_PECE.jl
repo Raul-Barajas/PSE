@@ -1,5 +1,3 @@
-using SpecialFunctions
-
 """
 INPUT VARIABLES:
 * `f`: La función real de dos variables reales que define el lado derecho de la ecuación diferencial.

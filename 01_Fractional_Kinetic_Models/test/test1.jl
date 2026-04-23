@@ -1,6 +1,5 @@
-include(joinpath(@__DIR__, "..", "src", "PECE.jl"))
-include(joinpath(@__DIR__, "..", "src", "Old_PECE.jl"))
-using Plots
+using FractionalModels
+using Plots, SpecialFunctions
 
 # Parametros del experimento
 N = 500
