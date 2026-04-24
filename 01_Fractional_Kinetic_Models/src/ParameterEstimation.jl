@@ -2,6 +2,8 @@
 Parameter estimation core.
 """
 
+const DEFAULT_ALPHA_UPPER_TOL = 1e-6
+
 """
     SeriesMatrix
 
@@ -109,7 +111,7 @@ function build_scenario_system(sys!, scenario)
     return (dx, x, t, p) -> sys!(dx, x, t, p; u=scenario_inputs)
 end
 
-function build_alpha(alpha, p, scenario)
+function build_alpha(alpha, p, scenario; upper_tol = DEFAULT_ALPHA_UPPER_TOL)
     αraw = alpha isa Function ? alpha(p) : alpha
     αv = _to_vector(αraw)
     n_state = length(scenario.x0)
@@ -124,11 +126,13 @@ function build_alpha(alpha, p, scenario)
         throw(ArgumentError("alpha values must be finite"))
     end
 
-    if any((αv .<= 0) .| (αv .> 1))
-        @warn "Invalid alpha values. The simulation will stop." alpha = αv
-        throw(ArgumentError("alpha values must satisfy 0 < alpha <= 1"))
+    if any(a -> a <= 0 || a > 1 + upper_tol, αv)
+        @warn "Invalid alpha values. The simulation will stop." alpha = αv upper_tol = upper_tol
+        throw(ArgumentError("alpha values must satisfy 0 < alpha <= 1 within tolerance"))
     end
 
+    # Treat tiny overshoots above 1 as numerical noise before calling PECE.
+    αv .= min.(αv, 1)
     return αv
 end
 

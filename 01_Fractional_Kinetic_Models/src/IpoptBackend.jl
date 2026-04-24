@@ -26,7 +26,9 @@ function _validate_param_setup(param_setup)
     return p0, p_lb, p_up
 end
 
-function _strictify_bounds(p0, p_lb, p_up, lower_bound_epsilon)
+function _strictify_bounds(p0, p_lb, p_up, lower_bound_epsilon, initial_point_epsilon)
+    initial_point_epsilon >= 0 || throw(ArgumentError("initial_point_epsilon must be non-negative"))
+
     p0_adj = copy(p0)
     p_lb_adj = copy(p_lb)
 
@@ -37,6 +39,15 @@ function _strictify_bounds(p0, p_lb, p_up, lower_bound_epsilon)
     end
 
     p0_adj .= clamp.(p0_adj, p_lb_adj, p_up)
+
+    for i in eachindex(p0_adj)
+        width = p_up[i] - p_lb_adj[i]
+        width <= 0 && continue
+
+        eps = min(initial_point_epsilon, width / 2)
+        p0_adj[i] = clamp(p0_adj[i], p_lb_adj[i] + eps, p_up[i] - eps)
+    end
+
     return p0_adj, p_lb_adj, p_up
 end
 
@@ -48,6 +59,7 @@ function _default_optim_options()
         acceptable_tol = 1e-5,
         hessian_approximation = "limited-memory",
         lower_bound_epsilon = 1e-8,
+        initial_point_epsilon = 1e-6,
         warn_on_unsolved_status = true,
     )
 end
@@ -137,13 +149,14 @@ function _estimate_params_impl(problem::EstimationProblem, param_setup; optim_se
     p0, p_lb, p_up = _validate_param_setup(param_setup)
     optim_options = _merge_optim_options(optim_setup)
     lower_bound_epsilon = optim_options.lower_bound_epsilon
-    p0, p_lb, p_up = _strictify_bounds(p0, p_lb, p_up, lower_bound_epsilon)
+    initial_point_epsilon = optim_options.initial_point_epsilon
+    p0, p_lb, p_up = _strictify_bounds(p0, p_lb, p_up, lower_bound_epsilon, initial_point_epsilon)
 
     objective_from_tuple, gradient! = _objective_gradient_fd(problem, p_lb, p_up)
 
     model = _build_optimizer_model(Ipopt.Optimizer)
     for (name, value) in pairs(optim_options)
-        name in (:lower_bound_epsilon, :warn_on_unsolved_status) && continue
+        name in (:lower_bound_epsilon, :initial_point_epsilon, :warn_on_unsolved_status) && continue
         JuMP.set_attribute(model, String(name), value)
     end
 

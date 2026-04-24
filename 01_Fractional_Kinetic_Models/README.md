@@ -283,7 +283,7 @@ function obj!(x, x_exp)
     for exp in axes(x, 2)
         for var in axes(x, 1)
             err = x[var, exp] .- x_exp[var, exp]
-            total += mean(abs.(err))
+            total += mean(err .^ 2)
             count += 1
         end
     end
@@ -296,9 +296,15 @@ For one experiment, this is also valid:
 
 ```julia
 function obj!(x, x_exp)
-    return mean(abs.(x[1] .- x_exp[1]))
+    err = x[1] .- x_exp[1]
+    return mean(err .^ 2)
 end
 ```
+
+Prefer squared errors, or another smooth objective, when estimating parameters
+with Ipopt. Absolute-value objectives such as `mean(abs.(err))` are valid as
+metrics, but they are not differentiable at zero and can make the Ipopt line
+search less stable.
 
 ## Notes
 

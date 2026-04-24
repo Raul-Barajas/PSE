@@ -132,7 +132,7 @@ p_frac = vec([0.999998 0.999901 1.0 0.833271 0.864344 0.0673656 0.169116 0.30608
 param_setup = (
     p0 = p_ord,
     p_lb = vcat(fill(0.5, m), zeros(2l)),
-    p_up = ones(m + 2l).+1e-6,
+    p_up = ones(m + 2l) .+ 1e-6,
 )
 
 optim_setup = (
