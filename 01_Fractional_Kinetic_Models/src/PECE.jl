@@ -1,11 +1,20 @@
+using SpecialFunctions: gamma
+
 # Vector de estado
 function F!(dx, sys!, x, t, p)
     sys!(dx, x, t, p)
     return dx
 end
 
-# Integrador hacia adelante
-function solve!(sys!, α, x0, p, T, N)
+"""
+    solve(sys!, alpha, x0, p, T, N)
+
+Integrate a fractional system with the PECE method.
+
+`sys!` must use the signature `sys!(dx, x, t, p)`. The solution is returned as
+a matrix with one state per row and one time point per column.
+"""
+function solve(sys!, α, x0, p, T, N)
 
     # Parametros
     h = T / N                                                       # h: Tamaño del paso principal
@@ -146,3 +155,10 @@ function solve!(sys!, α, x0, p, T, N)
 
     return x
 end
+
+"""
+    solve!(sys!, alpha, x0, p, T, N)
+
+Compatibility alias for [`solve`](@ref). Prefer `solve` for new code.
+"""
+const solve! = solve

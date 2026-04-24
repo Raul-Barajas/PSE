@@ -1,11 +1,33 @@
+"""
+Parameter estimation core.
+"""
+
+"""
+    SeriesMatrix
+
+Matrix-like container where each entry stores one time series. Index as
+`x[var, exp]`; when there is a single experiment, `x[var]` is also accepted.
+"""
 struct SeriesMatrix{T} <: AbstractMatrix{Vector{T}}
     data::Matrix{Vector{T}}
 end
 
+"""
+    ScenarioSolutions
+
+Vector-like container for full simulated trajectories, one matrix per
+experiment.
+"""
 struct ScenarioSolutions{T} <: AbstractVector{Matrix{T}}
     data::Vector{Matrix{T}}
 end
 
+"""
+    EstimationProblem
+
+Prepared parameter-estimation problem containing scenarios, sampled
+experimental data, solver settings, and the objective function.
+"""
 struct EstimationProblem{SYS,ALPHA,OBJ,SC,SYSS,TG,IDX,EXP,TT}
     sys!::SYS
     alpha::ALPHA
@@ -93,17 +115,17 @@ function build_alpha(alpha, p, scenario)
     n_state = length(scenario.x0)
 
     if length(αv) != n_state
-        @warn "Invalid alpha length. The simulation will stop." expected_length=n_state received_length=length(αv)
+        @warn "Invalid alpha length. The simulation will stop." expected_length = n_state received_length = length(αv)
         throw(ArgumentError("alpha must have the same length as x0"))
     end
 
     if !all(isfinite, αv)
-        @warn "Non-finite alpha values detected. The simulation will stop." alpha=αv
+        @warn "Non-finite alpha values detected. The simulation will stop." alpha = αv
         throw(ArgumentError("alpha values must be finite"))
     end
 
     if any((αv .<= 0) .| (αv .> 1))
-        @warn "Invalid alpha values. The simulation will stop." alpha=αv
+        @warn "Invalid alpha values. The simulation will stop." alpha = αv
         throw(ArgumentError("alpha values must satisfy 0 < alpha <= 1"))
     end
 
@@ -146,17 +168,12 @@ function normalize_u_list(u, n_exp)
     end
 
     if u isa AbstractVector
-        if n_exp == 1 && (isempty(u) || !(first(u) isa NamedTuple))
-            return [u]
-        end
-
         if all(ui -> ui isa NamedTuple || ui === nothing, u)
             length(u) == n_exp || throw(ArgumentError("u and x0 must contain the same number of experiments"))
             return collect(u)
         end
     end
 
-    n_exp == 1 && return [u]
     throw(ArgumentError("u must be a NamedTuple, a vector of NamedTuple, or nothing"))
 end
 
@@ -174,14 +191,14 @@ function build_model_scenario(x0, u)
     isempty(x0_vec) && throw(ArgumentError("x0 cannot be empty"))
     all(isfinite, x0_vec) || throw(ArgumentError("x0 must contain only finite values"))
 
-    scenario = (x0=x0_vec,)
+    scenario = (x0 = x0_vec,)
 
     if u === nothing
         return scenario
     end
 
     u isa NamedTuple || throw(ArgumentError("u must be a NamedTuple or nothing"))
-    return merge(scenario, (u=u,))
+    return merge(scenario, (u = u,))
 end
 
 function build_data_scenario(x0, u, data, exp_index::Int)
@@ -200,7 +217,7 @@ function build_data_scenario(x0, u, data, exp_index::Int)
 
     scenario = merge(
         build_model_scenario(x0, u),
-        (t_exp=t_exp, x_exp=x_exp),
+        (t_exp = t_exp, x_exp = x_exp),
     )
 
     if hasproperty(data, :x_map)
@@ -209,7 +226,7 @@ function build_data_scenario(x0, u, data, exp_index::Int)
         all(idx -> idx isa Integer, x_map) || throw(ArgumentError("x_map must contain integer indices for experiment $exp_index"))
         all(idx -> 1 <= idx <= length(x0), x_map) || throw(ArgumentError("x_map contains out-of-range indices for experiment $exp_index"))
         length(x_map) == size(x_exp, 1) || throw(ArgumentError("length(x_map) must match the number of observed variables for experiment $exp_index"))
-        scenario = merge(scenario, (x_map=x_map,))
+        scenario = merge(scenario, (x_map = x_map,))
     end
 
     return scenario
@@ -233,12 +250,12 @@ end
 function solve_scenario(sys!, alpha, scenario, p, T, N)
     scenario_sys! = build_scenario_system(sys!, scenario)
     α = build_alpha(alpha, p, scenario)
-    return solve!(scenario_sys!, α, scenario.x0, p, T, N)
+    return solve(scenario_sys!, α, scenario.x0, p, T, N)
 end
 
 function solve_prepared_scenario(scenario_sys!, alpha, scenario, p, T, N)
     α = build_alpha(alpha, p, scenario)
-    return solve!(scenario_sys!, α, scenario.x0, p, T, N)
+    return solve(scenario_sys!, α, scenario.x0, p, T, N)
 end
 
 function build_sample_indices(t_grid, t_exp)
@@ -295,21 +312,39 @@ function _threaded_collect(f, n_items::Int)
     return values
 end
 
+"""
+    prepare_estimation_problem(sys!, alpha, x0, u, data, obj!, T, N)
+
+Build an `EstimationProblem` from model definitions and experimental data.
+
+`alpha` can be a fixed vector or a function `alpha(p)`. `u` can be `nothing`,
+a `NamedTuple` shared by all experiments, or a vector of `NamedTuple` values.
+"""
 function prepare_estimation_problem(sys!, alpha, x0, u, data, obj!, T, N)
     scenarios = build_scenarios(x0, u, data)
     systems = [build_scenario_system(sys!, scenario) for scenario in scenarios]
-    t_grid = range(zero(T), T; length=N + 1)
+    t_grid = range(zero(T), T; length = N + 1)
     sample_indices = [build_sample_indices(t_grid, scenario.t_exp) for scenario in scenarios]
     x_exp = build_series_matrix([scenario.x_exp for scenario in scenarios])
 
     return EstimationProblem(sys!, alpha, obj!, scenarios, systems, t_grid, sample_indices, x_exp, T, N)
 end
 
+"""
+    simulate_scenario(sys!, alpha, x0, u, p, T, N)
+
+Simulate a single scenario with parameters `p`.
+"""
 function simulate_scenario(sys!, alpha, x0, u, p, T, N)
     scenario = build_model_scenario(x0, u)
     return solve_scenario(sys!, alpha, scenario, p, T, N)
 end
 
+"""
+    simulate_scenarios(sys!, alpha, x0, u, p, T, N)
+
+Simulate all scenarios described by `x0` and `u` with parameters `p`.
+"""
 function simulate_scenarios(sys!, alpha, x0, u, p, T, N)
     scenarios = build_model_scenarios(x0, u)
     systems = [build_scenario_system(sys!, scenario) for scenario in scenarios]
@@ -317,6 +352,12 @@ function simulate_scenarios(sys!, alpha, x0, u, p, T, N)
     return ScenarioSolutions(solutions)
 end
 
+"""
+    evaluate_objective(problem, p)
+
+Evaluate the objective function for a prepared estimation problem and a
+parameter vector `p`.
+"""
 function evaluate_objective(problem::EstimationProblem, p)
     x_samples = _threaded_collect(j -> begin
         x_model = solve_prepared_scenario(problem.systems[j], problem.alpha, problem.scenarios[j], p, problem.T, problem.N)
@@ -327,66 +368,12 @@ function evaluate_objective(problem::EstimationProblem, p)
     return problem.obj!(x, problem.x_exp)
 end
 
+"""
+    evaluate_objective(sys!, alpha, x0, u, data, obj!, p, T, N)
+
+Prepare the estimation problem and evaluate its objective for `p`.
+"""
 function evaluate_objective(sys!, alpha, x0, u, data, obj!, p, T, N)
     problem = prepare_estimation_problem(sys!, alpha, x0, u, data, obj!, T, N)
     return evaluate_objective(problem, p)
-end
-
-function _validate_param_setup(param_setup)
-    hasproperty(param_setup, :p0) || throw(ArgumentError("param_setup must contain p0"))
-    hasproperty(param_setup, :p_lb) || throw(ArgumentError("param_setup must contain p_lb"))
-    hasproperty(param_setup, :p_up) || throw(ArgumentError("param_setup must contain p_up"))
-
-    p0 = _to_vector(param_setup.p0)
-    p_lb = _to_vector(param_setup.p_lb)
-    p_up = _to_vector(param_setup.p_up)
-
-    length(p0) == length(p_lb) == length(p_up) || throw(ArgumentError("p0, p_lb, and p_up must have the same length"))
-    all(isfinite, p0) || throw(ArgumentError("p0 must contain only finite values"))
-    all(isfinite, p_lb) || throw(ArgumentError("p_lb must contain only finite values"))
-    all(isfinite, p_up) || throw(ArgumentError("p_up must contain only finite values"))
-    all(p_lb .<= p_up) || throw(ArgumentError("p_lb must be less than or equal to p_up component-wise"))
-    all((p0 .>= p_lb) .& (p0 .<= p_up)) || throw(ArgumentError("p0 must lie within [p_lb, p_up] component-wise"))
-
-    return p0, p_lb, p_up
-end
-
-function _default_method()
-    return Fminbox(LBFGS())
-end
-
-function _default_options()
-    return Optim.Options(show_trace=true)
-end
-
-function _get_method(optim_setup)
-    if isnothing(optim_setup)
-        return _default_method()
-    end
-
-    return hasproperty(optim_setup, :method) ? optim_setup.method : _default_method()
-end
-
-function _get_options(optim_setup)
-    if isnothing(optim_setup)
-        return _default_options()
-    end
-
-    return hasproperty(optim_setup, :options) ? optim_setup.options : _default_options()
-end
-
-function estimate_params(problem::EstimationProblem, param_setup; optim_setup=nothing)
-    p0, p_lb, p_up = _validate_param_setup(param_setup)
-
-    method = _get_method(optim_setup)
-    options = _get_options(optim_setup)
-
-    objective = p -> evaluate_objective(problem, p)
-    result = optimize(objective, p_lb, p_up, p0, method, options)
-    return Optim.minimizer(result)
-end
-
-function estimate_params(sys!, alpha, x0, u, data, obj!, param_setup, T, N; optim_setup=nothing)
-    problem = prepare_estimation_problem(sys!, alpha, x0, u, data, obj!, T, N)
-    return estimate_params(problem, param_setup; optim_setup=optim_setup)
 end
